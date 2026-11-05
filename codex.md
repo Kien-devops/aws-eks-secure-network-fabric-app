@@ -38,3 +38,8 @@ Tất cả các MCP Tools sau đây đã ở trạng thái **Allow** và phải 
 - **Console-First to IaC:** Hiểu rõ flow trên Console -> Triển khai và xác thực bằng AWS MCP -> Chuyển giao vào Terraform/ArgoCD.
 - **Redaction 100%:** Redact toàn bộ Account ID, Access Key, Database Password trước khi commit evidence.
 - **Reverse Teardown:** Dọn dẹp tài nguyên theo thứ tự ngược lại để đảm bảo không kẹt ENI hay phát sinh chi phí ngầm.
+
+---
+
+## 4. Bỏ qua (Ignore) Các Skill Thừa Thãi
+- Không kích hoạt các third-party agent skills (như Bug Bounty, Pentest, Marketing, SEO...). Tập trung 100% vào core AWS Networking & MCP tools.

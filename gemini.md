@@ -59,3 +59,11 @@ Tất cả các MCP Tools dưới đây đã được cấp quyền `Allow` và 
   - Che giấu 100% AWS Account ID (thay bằng `123456789012` hoặc `***`).
   - Tuyệt đối không commit Access Keys, Secret Tokens, Passwords, hoặc Private Keys vào repository.
 - **FinOps & Cleanup:** Khi hoàn tất thử nghiệm hoặc GameDay, kích hoạt quy trình dọn dẹp theo thứ tự ngược (Reverse Cleanup Dependency) đảm bảo tài nguyên tính phí về **$0.00**.
+
+---
+
+## 5. Bỏ qua (Ignore) Hoàn toàn Third-Party Skills & Extra Tools
+- **BỎ QUA TOÀN BỘ SKILLS THỪA:** Tuyệt đối không tải, không kích hoạt, và không áp dụng các generic skills bên thứ 3 (như Pentest, Bug Bounty, SEO, Marketing, Caveman, xã hội học...).
+- Toàn bộ workflow chỉ tập trung thuần túy vào:
+  1. Các công cụ MCP chính thống đã cấp quyền `Allow`.
+  2. Kiến trúc hạ tầng AWS Advanced Networking trên EKS theo chuẩn [spec.md](spec.md).

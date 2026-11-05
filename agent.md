@@ -39,3 +39,9 @@ Agent phải tự động ưu tiên và kích hoạt ngay các công cụ MCP d�
 - **Zero Fake Data:** Bằng chứng kiểm thử phải lấy từ raw runtime logs/output thực tế kèm timestamp.
 - **Redaction:** Che giấu AWS Account ID, token bí mật, password trước khi lưu vào git repository.
 - **FinOps:** Hủy bỏ tài nguyên theo quy trình Reverse Cleanup đảm bảo $0.00 lingering cost sau bài lab.
+
+---
+
+## 5. Bỏ qua (Ignore) Toàn bộ Third-Party Skills Ngoài Luồng
+- Bỏ qua hoàn toàn các third-party agent skills (như Pentest, Bug Bounty, SEO, Marketing...).
+- Chỉ tập trung vào các MCP tools đã được phê duyệt và giải pháp hạ tầng AWS Network Fabric theo `spec.md`.
