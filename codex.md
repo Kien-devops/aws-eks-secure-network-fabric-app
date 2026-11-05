@@ -12,35 +12,29 @@
 
 ---
 
-## 2. AWS MCP-First Directive (Bắt buộc 100%)
-- **Quy tắc tuyệt đối:**
-  - Mọi thao tác tương tác AWS Cloud (Describe, Create, Update, Delete, Verify status) **BẮT BUỘC ƯU TIÊN SỬ DỤNG AWS MCP SERVER**.
-  - Server chính: `aws-api-mcp` với công cụ `call_aws`:
-    ```json
-    {
-      "ServerName": "aws-api-mcp",
-      "ToolName": "call_aws",
-      "Arguments": {
-        "cli_command": "aws <service> <operation> [parameters] --region ap-southeast-1"
-      }
-    }
-    ```
-  - Tra cứu tài liệu và regional check: dùng server `aws-mcp`.
-  - Tương tác với Kubernetes/EKS: dùng server `kubernetes-mcp-server`.
-- **Nghiêm cấm:** Không tự ý viết script Python `boto3` hay terminal shell (`run_command`) khi MCP thực hiện được.
-- **Hành động tự động dứt khoát:** Khi có yêu cầu triển khai hoặc kiểm tra, thực thi ngay qua AWS MCP, không xin phép rườm rà.
+## 2. Bắt buộc Tự động Sử dụng Danh mục MCP Tools Đã Cấp Quyền (Auto-Invoke)
+
+Tất cả các MCP Tools sau đây đã ở trạng thái **Allow** và phải được tự động kích hoạt:
+
+### 2.1 AWS Operations (`aws-api-mcp` & `aws-mcp`)
+- **`aws-api-mcp/call_aws`:** Bắt buộc tự động dùng cho 100% thao tác tương tác AWS Cloud (Describe, Create, Update, Delete, Verify status). Luôn chỉ định `--region ap-southeast-1`.
+- **`aws-api-mcp/suggest_aws_commands`:** Tự động dùng khi cần đề xuất cú pháp CLI phức tạp.
+- **`aws-mcp/aws__run_script`:** Tự động dùng khi cần chạy script tự động hóa AWS.
+- **`aws-mcp/aws__search_documentation`:** Tự động dùng khi cần tra cứu tài liệu AWS chính thống.
+- **`kubernetes-mcp-server`:** Tự động dùng cho các tài nguyên Pods, Deployments, Services, NetworkPolicies trên 2 EKS clusters.
+
+> **Cấm:** Không tự ý viết script Python `boto3` hay terminal shell (`run_command`) khi MCP thực hiện được.
+
+### 2.2 Phân tích Code & Đồ thị (`code-review-graph` & `codebase-memory-mcp`)
+- **`code-review-graph/get_architecture_overview_tool`:** Tự động gọi khi cần bức tranh kiến trúc tổng thể.
+- **`code-review-graph/query_graph_tool`:** Tự động gọi khi truy vấn phụ thuộc giữa các thành phần mạng & manifests.
+- **`code-review-graph/list_graph_stats_tool`:** Tự động gọi khi kiểm tra stats và số lượng nodes/edges.
+- **`code-review-graph/find_large_functions_tool`:** Tự động gọi để rà soát các hàm phức tạp hoặc cấu hình quá dài.
+- **`codebase-memory-mcp`:** Tự động cập nhật bằng `index_repository(repo_path="...", persistence=true)` và tra cứu bằng `get_architecture`, `search_graph`, `trace_path`.
 
 ---
 
-## 3. Quản lý Đồ thị Mã nguồn & Bộ nhớ Codebase
-- Dự án sử dụng song song 2 MCP servers:
-  1. `codebase-memory-mcp`: Dùng để duy trì đồ thị tri thức, tìm kiếm kiến trúc (`get_architecture`), truy vấn đường đi (`trace_path`).
-  2. `code-review-graph`: Dùng để xác định phạm vi ảnh hưởng (`get_impact_radius_tool`), trích xuất context review (`get_review_context_tool`).
-- Mỗi khi hoàn thành một module hạ tầng hoặc cập nhật service, chủ động gọi `index_repository` và `build_or_update_graph_tool` để đồng bộ đồ thị tri thức.
-
----
-
-## 4. Quy chuẩn Thực thi & Evidence
+## 3. Quy chuẩn Thực thi & Evidence
 - **Console-First to IaC:** Hiểu rõ flow trên Console -> Triển khai và xác thực bằng AWS MCP -> Chuyển giao vào Terraform/ArgoCD.
 - **Redaction 100%:** Redact toàn bộ Account ID, Access Key, Database Password trước khi commit evidence.
 - **Reverse Teardown:** Dọn dẹp tài nguyên theo thứ tự ngược lại để đảm bảo không kẹt ENI hay phát sinh chi phí ngầm.

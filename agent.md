@@ -9,26 +9,33 @@
 
 ---
 
-## 2. Bắt buộc Sử dụng AWS MCP khi Triển khai hoặc Truy vấn
-- **Nguyên tắc bắt buộc:**
-  - Bất cứ khi nào nhận yêu cầu triển khai, kiểm tra, tạo, sửa hoặc dọn dẹp tài nguyên AWS, Agent **BẮT BUỘC PHẢI SỬ DỤNG AWS MCP** (`aws-api-mcp` -> `call_aws`).
-  - Đối với các thao tác trong Kubernetes/EKS: Sử dụng `kubernetes-mcp-server`.
-  - Không viết terminal shell hay script python boto3 thay thế cho MCP.
-  - Khi người dùng bảo "triển khai X", Agent tự giác thực thi ngay qua AWS MCP mà không cần hỏi lại câu hỏi xác nhận thừa thãi.
+## 2. Bắt buộc Tự động Sử dụng Danh mục MCP Tools (Đã Cấp Quyền "Allow")
+
+Agent phải tự động ưu tiên và kích hoạt ngay các công cụ MCP dưới đây:
+
+### 2.1 Nhóm AWS Cloud
+- **`aws-api-mcp/call_aws`:** Bắt buộc 100% khi thao tác với AWS Cloud (describe, create, update, delete, verify).
+- **`aws-api-mcp/suggest_aws_commands`:** Bắt buộc khi phân tích, tối ưu cú pháp lệnh AWS CLI.
+- **`aws-mcp/aws__run_script`:** Bắt buộc khi chạy script automation AWS.
+- **`aws-mcp/aws__search_documentation`:** Bắt buộc khi tra cứu tài liệu AWS.
+- **`kubernetes-mcp-server`:** Bắt buộc khi quản lý Kubernetes objects trên EKS.
+
+### 2.2 Nhóm Code Review Graph & Codebase Memory
+- **`code-review-graph/get_architecture_overview_tool`:** Bắt buộc khi truy vấn kiến trúc tổng quan.
+- **`code-review-graph/query_graph_tool`:** Bắt buộc khi truy vấn quan hệ module/file/flow.
+- **`code-review-graph/list_graph_stats_tool`:** Bắt buộc khi kiểm tra số lượng node/edge đồ thị mã nguồn.
+- **`code-review-graph/find_large_functions_tool`:** Bắt buộc khi rà soát hàm/khối lệnh phức tạp.
+- **`codebase-memory-mcp`:** Bắt buộc duy trì index và truy vấn kiến trúc sâu qua `index_repository`, `get_architecture`, `search_graph`, `trace_path`.
 
 ---
 
-## 3. Tích hợp Codebase Memory & Code Review Graph
-- **Codebase Memory MCP (`codebase-memory-mcp`):**
-  - Indexing: `index_repository(repo_path="...", persistence=true)`.
-  - Tra cứu cấu trúc & phân tích: `get_architecture`, `search_graph`, `query_graph`.
-- **Code Review Graph MCP (`code-review-graph`):**
-  - Build & update graph: `build_or_update_graph_tool(repo_root="...")`.
-  - Phân tích rủi ro & bán kính ảnh hưởng: `get_impact_radius_tool`.
+## 3. Hành động Tự chủ & Dứt khoát (Autonomous Action)
+- Khi nhận lệnh từ người dùng: Tự giác thực thi ngay qua MCP tương ứng mà không hỏi xin phép lại.
+- Chỉ dùng `run_command` cho local git và packaging.
 
 ---
 
 ## 4. An toàn & Bảo mật
-- **Không giả mạo kết quả (Zero Fake Data):** Bằng chứng kiểm thử phải lấy từ raw runtime logs/output thực tế kèm timestamp.
+- **Zero Fake Data:** Bằng chứng kiểm thử phải lấy từ raw runtime logs/output thực tế kèm timestamp.
 - **Redaction:** Che giấu AWS Account ID, token bí mật, password trước khi lưu vào git repository.
 - **FinOps:** Hủy bỏ tài nguyên theo quy trình Reverse Cleanup đảm bảo $0.00 lingering cost sau bài lab.
