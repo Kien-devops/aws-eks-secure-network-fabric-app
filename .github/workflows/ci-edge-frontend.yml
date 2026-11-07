@@ -6,11 +6,6 @@ on:
     paths:
       - 'services/edge-frontend/**'
       - '.github/workflows/ci-edge-frontend.yml'
-    paths-ignore:
-      - 'k8s/**'
-      - 'docs/**'
-      - 'evidence/**'
-      - '**.md'
   workflow_dispatch:
 
 concurrency:
