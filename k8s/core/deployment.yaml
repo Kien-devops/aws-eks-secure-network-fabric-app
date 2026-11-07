@@ -106,7 +106,7 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: "preserve_client_ip.enabled=false"
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "TCP"
     service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
-    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=aws-eks-secure-network-fabric,Environment=prod"
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=aws-eks-secure-network-fabric,Environment=prod,elbv2.k8s.aws/cluster=fabric-core-eks"
 spec:
   type: LoadBalancer
   selector:
