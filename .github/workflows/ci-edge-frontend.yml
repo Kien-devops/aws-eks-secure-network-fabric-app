@@ -45,7 +45,7 @@ jobs:
           docker build -t fabric-edge-frontend:local .
 
       - name: Run Trivy Vulnerability Scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: 'fabric-edge-frontend:local'
           format: 'json'
