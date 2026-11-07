@@ -130,6 +130,9 @@ jobs:
           TARGET_VPC="Edge VPC (10.40.0.0/16)"
           BRANCH_NAME="gitops/promote-edge-frontend"
           
+          # 0. Clean working tree from previous build/tidy steps
+          git reset --hard HEAD
+          
           # 1. Update manifest with immutable digest (@sha256:...)
           sed -i "s|image: .*fabric-edge-frontend.*|image: ${ECR_REGISTRY}/${ECR_REPO}@${IMAGE_DIGEST}|g" $MANIFEST_PATH
           

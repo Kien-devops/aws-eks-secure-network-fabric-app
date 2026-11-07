@@ -132,6 +132,9 @@ jobs:
           TARGET_VPC="Core VPC (10.50.0.0/16)"
           BRANCH_NAME="gitops/promote-core-service"
           
+          # 0. Clean working tree from previous build/tidy steps
+          git reset --hard HEAD
+          
           # 1. Update manifest with immutable digest (@sha256:...)
           sed -i "s|image: .*fabric-core-service.*|image: ${ECR_REGISTRY}/${ECR_REPO}@${IMAGE_DIGEST}|g" $MANIFEST_PATH
           
