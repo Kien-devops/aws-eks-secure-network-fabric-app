@@ -431,16 +431,16 @@ const htmlDashboardTemplate = `<!DOCTYPE html>
         const res = await fetch('/api/v1/orders');
         const json = await res.json();
         if (json.data && json.data.orders && json.data.orders.length > 0) {
-          tbody.innerHTML = json.data.orders.map(o => `
-            <tr>
-              <td style="font-family: monospace; color: var(--accent); font-weight: 600;">${o.id}</td>
-              <td>${o.product_id}</td>
-              <td>${o.quantity}</td>
-              <td>$${Number(o.amount).toFixed(2)}</td>
-              <td><span class="status-pill pill-green">${o.status}</span></td>
-              <td style="color: var(--text-muted); font-size: 0.8rem;">${new Date(o.created_at).toLocaleString()}</td>
-            </tr>
-          `).join('');
+          tbody.innerHTML = json.data.orders.map(function(o) {
+            return '<tr>' +
+              '<td style="font-family: monospace; color: var(--accent); font-weight: 600;">' + o.id + '</td>' +
+              '<td>' + o.product_id + '</td>' +
+              '<td>' + o.quantity + '</td>' +
+              '<td>$' + Number(o.amount).toFixed(2) + '</td>' +
+              '<td><span class="status-pill pill-green">' + o.status + '</span></td>' +
+              '<td style="color: var(--text-muted); font-size: 0.8rem;">' + new Date(o.created_at).toLocaleString() + '</td>' +
+            '</tr>';
+          }).join('');
         } else {
           tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No orders yet. Submit the form above to create the first order!</td></tr>';
         }
