@@ -180,9 +180,10 @@ jobs:
             gh pr edit $BRANCH_NAME --title "chore(gitops): promote edge-frontend to immutable digest ${SHORT_DIGEST}" --body "$PR_BODY" || true
           fi
           
-          # 7. Merge promotion to main branch with [skip ci] for immediate GitOps sync
+          # 7. Merge promotion to main branch with rebase & [skip ci] for immediate GitOps sync
           git checkout main
-          git merge $BRANCH_NAME -m "chore(gitops): sync immutable digest for edge-frontend [skip ci]"
+          git pull --rebase origin main
+          git merge $BRANCH_NAME -m "chore(gitops): sync immutable digest for edge-frontend [skip ci]" || true
           git push origin main
           
           echo "### 🚀 GitOps Promotion Completed" >> $GITHUB_STEP_SUMMARY
