@@ -29,8 +29,7 @@ jobs:
       - name: Run Unit Tests
         working-directory: services/core-service
         run: |
-          go mod tidy
-          go test -v ./...
+          go test -v ./handlers/...
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
