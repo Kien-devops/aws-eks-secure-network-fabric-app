@@ -10,20 +10,9 @@ data:
   PORT: "8080"
   ENVIRONMENT: "production"
   CORE_BACKEND_URL: "https://core.fabric.internal:443"
+  CA_CERT_PATH: "/etc/fabric-ca/ca.crt"
   HTTP_TIMEOUT: "10s"
   LOG_LEVEL: "info"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: edge-frontend-secret
-  namespace: fabric-apps
-  labels:
-    app: frontend
-type: Opaque
-stringData:
-  # Mount vao /etc/fabric-ca/ca.crt neu can verify custom internal CA
-  ca.crt: ""
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -53,6 +42,10 @@ spec:
         envFrom:
         - configMapRef:
             name: edge-frontend-config
+        volumeMounts:
+        - name: ca-volume
+          mountPath: /etc/fabric-ca
+          readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -72,6 +65,10 @@ spec:
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 15
+      volumes:
+      - name: ca-volume
+        configMap:
+          name: fabric-internal-ca
 ---
 apiVersion: v1
 kind: Service
@@ -89,4 +86,3 @@ spec:
     port: 8080
     targetPort: 8080
     protocol: TCP
-
