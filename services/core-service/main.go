@@ -14,6 +14,8 @@ import (
 	"github.com/Kien-devops/aws-eks-secure-network-fabric-app/services/core-service/cache"
 	"github.com/Kien-devops/aws-eks-secure-network-fabric-app/services/core-service/db"
 	"github.com/Kien-devops/aws-eks-secure-network-fabric-app/services/core-service/queue"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/google/uuid"
 )
 
@@ -25,22 +27,24 @@ type App struct {
 }
 
 type Config struct {
-	Port        string
-	DBHost      string
-	DBPort      string
-	DBName      string
-	DBUser      string
-	DBPassword  string
-	DBSSLMode   string
+	Port               string
+	DBHost             string
+	DBPort             string
+	DBName             string
+	DBUser             string
+	DBPassword         string
+	DBSecretID         string
+	DBSSLMode          string
 	RedisHost          string
 	RedisPort          string
 	RedisAuth          string
+	RedisSecretID      string
 	RedisTLS           bool
 	RedisTLSServerName string
 	SQSQueueURL        string
-	AWSRegion   string
-	TLSCertPath string
-	TLSKeyPath  string
+	AWSRegion          string
+	TLSCertPath        string
+	TLSKeyPath         string
 }
 
 type OrderRequest struct {
@@ -165,19 +169,21 @@ func (a *App) createOrderHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	cfg := Config{
-		Port:        getEnv("PORT", "8082"),
-		DBHost:      getEnv("DB_HOST", "db.fabric.internal"),
-		DBPort:      getEnv("DB_PORT", "5432"),
-		DBName:      getEnv("DB_NAME", "fabric_db"),
-		DBUser:      getEnv("DB_USER", "postgresadmin"),
-		DBPassword:  os.Getenv("DB_PASSWORD"),
-		DBSSLMode:   getEnv("DB_SSL_MODE", "prefer"),
+		Port:               getEnv("PORT", "8082"),
+		DBHost:             getEnv("DB_HOST", "db.fabric.internal"),
+		DBPort:             getEnv("DB_PORT", "5432"),
+		DBName:             getEnv("DB_NAME", "postgres"),
+		DBUser:             getEnv("DB_USER", "postgresadmin"),
+		DBPassword:         os.Getenv("DB_PASSWORD"),
+		DBSecretID:         getEnv("DB_SECRET_ID", "rds!cluster-62aa262a-3209-417c-95ed-d72af68465ac"),
+		DBSSLMode:          getEnv("DB_SSL_MODE", "prefer"),
 		RedisHost:          getEnv("REDIS_HOST", "redis.fabric.internal"),
 		RedisPort:          getEnv("REDIS_PORT", "6379"),
 		RedisAuth:          os.Getenv("REDIS_AUTH"),
+		RedisSecretID:      getEnv("REDIS_SECRET_ID", "fabric-core-redis-auth"),
 		RedisTLS:           getEnv("REDIS_TLS", "true") == "true",
 		RedisTLSServerName: getEnv("REDIS_TLS_SERVER_NAME", "master.fabric-core-redis.qspmd1.apse1.cache.amazonaws.com"),
-		SQSQueueURL:        getEnv("SQS_QUEUE_URL", "https://ap-southeast-1.queue.amazonaws.com/123456789012/fabric-order-events"),
+		SQSQueueURL:        getEnv("SQS_QUEUE_URL", "https://ap-southeast-1.queue.amazonaws.com/620306387033/fabric-order-events"),
 		AWSRegion:          getEnv("AWS_REGION", "ap-southeast-1"),
 		TLSCertPath:        getEnv("TLS_CERT_PATH", "/etc/tls/tls.crt"),
 		TLSKeyPath:         getEnv("TLS_KEY_PATH", "/etc/tls/tls.key"),
@@ -185,6 +191,40 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Tự động lấy DB password từ AWS Secrets Manager qua Pod Identity nếu chưa có trong env
+	if cfg.DBPassword == "" && cfg.DBSecretID != "" {
+		raw, err := fetchSecretFromAWS(ctx, cfg.AWSRegion, cfg.DBSecretID)
+		if err == nil {
+			var parsed struct {
+				Password string `json:"password"`
+			}
+			if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed.Password != "" {
+				cfg.DBPassword = parsed.Password
+				log.Printf("Successfully retrieved DB password from AWS Secrets Manager (%s) via Pod Identity", cfg.DBSecretID)
+			}
+		} else {
+			log.Printf("Warn: Failed fetching DB secret (%s) via Pod Identity: %v", cfg.DBSecretID, err)
+		}
+	}
+
+	// Tự động lấy Redis auth token từ AWS Secrets Manager qua Pod Identity nếu chưa có trong env
+	if cfg.RedisAuth == "" && cfg.RedisSecretID != "" {
+		raw, err := fetchSecretFromAWS(ctx, cfg.AWSRegion, cfg.RedisSecretID)
+		if err == nil {
+			var parsed struct {
+				AuthToken string `json:"auth_token"`
+			}
+			if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed.AuthToken != "" {
+				cfg.RedisAuth = parsed.AuthToken
+				log.Printf("Successfully retrieved Redis auth token from AWS Secrets Manager (%s) via Pod Identity", cfg.RedisSecretID)
+			} else {
+				cfg.RedisAuth = raw
+			}
+		} else {
+			log.Printf("Warn: Failed fetching Redis secret (%s) via Pod Identity: %v", cfg.RedisSecretID, err)
+		}
+	}
 
 	app := &App{Config: cfg}
 
@@ -262,4 +302,22 @@ func fileExists(path string) bool {
 		return false
 	}
 	return !info.IsDir()
+}
+
+func fetchSecretFromAWS(ctx context.Context, region, secretID string) (string, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config for secrets: %w", err)
+	}
+	client := secretsmanager.NewFromConfig(cfg)
+	out, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &secretID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s: %w", secretID, err)
+	}
+	if out.SecretString == nil {
+		return "", fmt.Errorf("secret %s has empty SecretString", secretID)
+	}
+	return *out.SecretString, nil
 }

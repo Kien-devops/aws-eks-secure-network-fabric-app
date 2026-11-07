@@ -19,26 +19,17 @@ data:
   PORT: "8082"
   DB_HOST: "db.fabric.internal"
   DB_PORT: "5432"
-  DB_NAME: "fabric_db"
+  DB_NAME: "postgres"
   DB_USER: "postgresadmin"
+  DB_SECRET_ID: "rds!cluster-62aa262a-3209-417c-95ed-d72af68465ac"
   DB_SSL_MODE: "prefer"
   REDIS_HOST: "redis.fabric.internal"
   REDIS_PORT: "6379"
+  REDIS_SECRET_ID: "fabric-core-redis-auth"
   REDIS_TLS: "true"
+  REDIS_TLS_SERVER_NAME: "master.fabric-core-redis.qspmd1.apse1.cache.amazonaws.com"
   SQS_QUEUE_URL: "https://ap-southeast-1.queue.amazonaws.com/620306387033/fabric-order-events"
   AWS_REGION: "ap-southeast-1"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: core-service-secret
-  namespace: fabric-apps
-  labels:
-    app: order-service
-type: Opaque
-stringData:
-  DB_PASSWORD: "O$e_ldY_gv~vdqMLQF3#5m.Wc.Ll"
-  REDIS_AUTH: "Hgd7tdyEDQnB6kSyJjStO59ZUyutCStu"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -70,8 +61,6 @@ spec:
         envFrom:
         - configMapRef:
             name: core-service-config
-        - secretRef:
-            name: core-service-secret
         volumeMounts:
         - name: tls-certs
           mountPath: /etc/tls
