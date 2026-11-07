@@ -21,3 +21,4 @@ EXPOSE 8080
 USER 10001:10001
 
 ENTRYPOINT ["/app/edge-frontend"]
+

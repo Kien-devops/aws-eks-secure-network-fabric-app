@@ -77,3 +77,4 @@ func (d *DBClient) CreateOrder(ctx context.Context, order OrderRecord) error {
 	_, err := d.Pool.Exec(ctx, query, order.ID, order.ProductID, order.Quantity, order.Amount, order.Status, order.CreatedAt)
 	return err
 }
+

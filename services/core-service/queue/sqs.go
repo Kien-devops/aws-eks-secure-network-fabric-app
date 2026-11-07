@@ -85,3 +85,4 @@ func (s *SQSHandler) StartConsumer(ctx context.Context, workerID string) {
 		}
 	}()
 }
+

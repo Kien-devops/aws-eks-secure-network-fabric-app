@@ -33,3 +33,4 @@ func TestHealthHandler(t *testing.T) {
 		t.Errorf("expected service edge-frontend, got %v", payload.Service)
 	}
 }
+
