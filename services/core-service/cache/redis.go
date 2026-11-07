@@ -14,7 +14,7 @@ type CacheClient struct {
 	Client *redis.Client
 }
 
-func ConnectRedis(ctx context.Context, host, port, authToken string, useTLS bool) (*CacheClient, error) {
+func ConnectRedis(ctx context.Context, host, port, authToken string, useTLS bool, serverName string) (*CacheClient, error) {
 	addr := fmt.Sprintf("%s:%s", host, port)
 
 	opts := &redis.Options{
@@ -28,9 +28,13 @@ func ConnectRedis(ctx context.Context, host, port, authToken string, useTLS bool
 	}
 
 	if useTLS {
-		opts.TLSConfig = &tls.Config{
+		tlsConfig := &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		}
+		if serverName != "" {
+			tlsConfig.ServerName = serverName
+		}
+		opts.TLSConfig = tlsConfig
 	}
 
 	rdb := redis.NewClient(opts)

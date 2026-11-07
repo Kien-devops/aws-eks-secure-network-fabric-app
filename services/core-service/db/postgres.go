@@ -23,8 +23,8 @@ type OrderRecord struct {
 }
 
 func ConnectPostgres(ctx context.Context, host, port, user, password, dbName, sslMode string) (*DBClient, error) {
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		user, password, host, port, dbName, sslMode)
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password='%s' dbname=%s sslmode=%s",
+		host, port, user, password, dbName, sslMode)
 
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {

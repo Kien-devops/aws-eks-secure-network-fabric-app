@@ -37,9 +37,8 @@ metadata:
     app: order-service
 type: Opaque
 stringData:
-  # Gia tri duoc dong bo tu AWS Secrets Manager (fabric-core-redis-auth)
-  DB_PASSWORD: ""
-  REDIS_AUTH: ""
+  DB_PASSWORD: "O$e_ldY_gv~vdqMLQF3#5m.Wc.Ll"
+  REDIS_AUTH: "Hgd7tdyEDQnB6kSyJjStO59ZUyutCStu"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -73,6 +72,10 @@ spec:
             name: core-service-config
         - secretRef:
             name: core-service-secret
+        volumeMounts:
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
         resources:
           requests:
             cpu: 100m
@@ -84,14 +87,20 @@ spec:
           httpGet:
             path: /healthz
             port: 8082
+            scheme: HTTPS
           initialDelaySeconds: 5
           periodSeconds: 10
         livenessProbe:
           httpGet:
             path: /healthz
             port: 8082
+            scheme: HTTPS
           initialDelaySeconds: 10
           periodSeconds: 15
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: core-backend-tls
 ---
 apiVersion: v1
 kind: Service

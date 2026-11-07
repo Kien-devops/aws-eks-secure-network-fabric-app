@@ -32,11 +32,12 @@ type Config struct {
 	DBUser      string
 	DBPassword  string
 	DBSSLMode   string
-	RedisHost   string
-	RedisPort   string
-	RedisAuth   string
-	RedisTLS    bool
-	SQSQueueURL string
+	RedisHost          string
+	RedisPort          string
+	RedisAuth          string
+	RedisTLS           bool
+	RedisTLSServerName string
+	SQSQueueURL        string
 	AWSRegion   string
 	TLSCertPath string
 	TLSKeyPath  string
@@ -171,14 +172,15 @@ func main() {
 		DBUser:      getEnv("DB_USER", "postgresadmin"),
 		DBPassword:  os.Getenv("DB_PASSWORD"),
 		DBSSLMode:   getEnv("DB_SSL_MODE", "prefer"),
-		RedisHost:   getEnv("REDIS_HOST", "redis.fabric.internal"),
-		RedisPort:   getEnv("REDIS_PORT", "6379"),
-		RedisAuth:   os.Getenv("REDIS_AUTH"),
-		RedisTLS:    getEnv("REDIS_TLS", "true") == "true",
-		SQSQueueURL: getEnv("SQS_QUEUE_URL", "https://ap-southeast-1.queue.amazonaws.com/123456789012/fabric-order-events"),
-		AWSRegion:   getEnv("AWS_REGION", "ap-southeast-1"),
-		TLSCertPath: getEnv("TLS_CERT_PATH", "/etc/tls/tls.crt"),
-		TLSKeyPath:  getEnv("TLS_KEY_PATH", "/etc/tls/tls.key"),
+		RedisHost:          getEnv("REDIS_HOST", "redis.fabric.internal"),
+		RedisPort:          getEnv("REDIS_PORT", "6379"),
+		RedisAuth:          os.Getenv("REDIS_AUTH"),
+		RedisTLS:           getEnv("REDIS_TLS", "true") == "true",
+		RedisTLSServerName: getEnv("REDIS_TLS_SERVER_NAME", "master.fabric-core-redis.qspmd1.apse1.cache.amazonaws.com"),
+		SQSQueueURL:        getEnv("SQS_QUEUE_URL", "https://ap-southeast-1.queue.amazonaws.com/123456789012/fabric-order-events"),
+		AWSRegion:          getEnv("AWS_REGION", "ap-southeast-1"),
+		TLSCertPath:        getEnv("TLS_CERT_PATH", "/etc/tls/tls.crt"),
+		TLSKeyPath:         getEnv("TLS_KEY_PATH", "/etc/tls/tls.key"),
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -198,7 +200,7 @@ func main() {
 	}
 
 	// Kết nối Redis
-	cacheClient, err := cache.ConnectRedis(ctx, cfg.RedisHost, cfg.RedisPort, cfg.RedisAuth, cfg.RedisTLS)
+	cacheClient, err := cache.ConnectRedis(ctx, cfg.RedisHost, cfg.RedisPort, cfg.RedisAuth, cfg.RedisTLS, cfg.RedisTLSServerName)
 	if err == nil {
 		app.Cache = cacheClient
 	} else {
