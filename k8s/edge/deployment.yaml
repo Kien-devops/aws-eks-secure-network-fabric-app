@@ -34,7 +34,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-edge-frontend@sha256:7006d14fda8a42447f69f1f74958291d7bd79d64e1a9bf002cb8fbe7a8d5eaa4
+        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-edge-frontend@sha256:565a6e136297cbf988a159579a31b0163668dadc21ce6dc1dcb6e1937ec574ea
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
