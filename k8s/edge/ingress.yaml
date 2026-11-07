@@ -7,12 +7,14 @@ metadata:
     app: frontend
     Project: aws-eks-secure-network-fabric
   annotations:
+    alb.ingress.kubernetes.io/group.name: fabric-edge-shared-alb
+    alb.ingress.kubernetes.io/group.order: "100"
+    alb.ingress.kubernetes.io/load-balancer-name: fabric-edge-public-alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-southeast-1:620306387033:certificate/0907f419-dd72-4b90-89af-e2bf7ce67391
-    alb.ingress.kubernetes.io/load-balancer-name: fabric-edge-public-alb
     alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:ap-southeast-1:620306387033:regional/webacl/fabric-edge-web-acl/a010b9c0-edfa-4ba4-bfb0-8691ae8ecf56
     alb.ingress.kubernetes.io/healthcheck-path: /healthz
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
@@ -33,4 +35,3 @@ spec:
             name: frontend
             port:
               number: 8080
-
