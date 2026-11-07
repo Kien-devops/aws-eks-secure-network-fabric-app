@@ -98,72 +98,250 @@ func (a *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (a *App) createOrderHandler(w http.ResponseWriter, r *http.Request) {
+func (a *App) ordersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if r.Method != http.MethodPost {
+	switch r.Method {
+	case http.MethodPost:
+		var req OrderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(ResponsePayload{
+				Service: "core-service",
+				Status:  "INVALID_PAYLOAD",
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		orderID := "ord-" + uuid.New().String()[:8]
+		orderRecord := db.OrderRecord{
+			ID:        orderID,
+			ProductID: req.ProductID,
+			Quantity:  req.Quantity,
+			Amount:    req.Amount,
+			Status:    "PENDING_PAYMENT",
+			CreatedAt: time.Now().UTC(),
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		dbStatus := "SAVED"
+		// 1. Lưu vào Aurora PostgreSQL
+		if a.DB != nil {
+			if err := a.DB.CreateOrder(ctx, orderRecord); err != nil {
+				log.Printf("DB error: %v", err)
+				dbStatus = fmt.Sprintf("ERROR: %v", err)
+			}
+		} else {
+			dbStatus = "NOT_CONFIGURED"
+		}
+
+		cacheStatus := "CACHED"
+		// 2. Lưu Cache vào ElastiCache Redis
+		if a.Cache != nil {
+			payloadBytes, _ := json.Marshal(orderRecord)
+			if err := a.Cache.SetOrderCache(ctx, orderID, payloadBytes, 10*time.Minute); err != nil {
+				log.Printf("Redis cache error: %v", err)
+				cacheStatus = fmt.Sprintf("ERROR: %v", err)
+			}
+		} else {
+			cacheStatus = "NOT_CONFIGURED"
+		}
+
+		sqsStatus := "PUBLISHED"
+		// 3. Đẩy OrderCreated event vào Amazon SQS
+		if a.SQS != nil {
+			msgBytes, _ := json.Marshal(orderRecord)
+			if err := a.SQS.PublishOrderEvent(ctx, orderID, string(msgBytes)); err != nil {
+				log.Printf("SQS error: %v", err)
+				sqsStatus = fmt.Sprintf("ERROR: %v", err)
+			}
+		} else {
+			sqsStatus = "NOT_CONFIGURED"
+		}
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(ResponsePayload{
+			Service:   "core-service",
+			Status:    "ORDER_CREATED",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Data: map[string]interface{}{
+				"order":        orderRecord,
+				"database":     dbStatus,
+				"redis_cache":  cacheStatus,
+				"sqs_event":    sqsStatus,
+				"cluster":      "fabric-core-eks",
+			},
+		})
+
+	case http.MethodGet:
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		if a.DB == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(ResponsePayload{
+				Service: "core-service",
+				Status:  "ERROR",
+				Error:   "Database not connected",
+			})
+			return
+		}
+
+		orders, err := a.DB.ListOrders(ctx, 20)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(ResponsePayload{
+				Service: "core-service",
+				Status:  "ERROR",
+				Error:   err.Error(),
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(ResponsePayload{
+			Service:   "core-service",
+			Status:    "SUCCESS",
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Data: map[string]interface{}{
+				"count":  len(orders),
+				"orders": orders,
+			},
+		})
+
+	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		json.NewEncoder(w).Encode(ResponsePayload{
 			Service: "core-service",
 			Status:  "ERROR",
-			Error:   "Use POST method",
+			Error:   "Method not allowed (Use GET or POST)",
 		})
+	}
+}
+
+func (a *App) getOrderByIDHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req OrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(ResponsePayload{
-			Service: "core-service",
-			Status:  "INVALID_PAYLOAD",
-			Error:   err.Error(),
-		})
+	orderID := r.URL.Path[len("/orders/"):]
+	if orderID == "" {
+		a.ordersHandler(w, r)
 		return
-	}
-
-	orderID := "ord-" + uuid.New().String()[:8]
-	orderRecord := db.OrderRecord{
-		ID:        orderID,
-		ProductID: req.ProductID,
-		Quantity:  req.Quantity,
-		Amount:    req.Amount,
-		Status:    "PENDING_PAYMENT",
-		CreatedAt: time.Now().UTC(),
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// 1. Lưu vào Aurora PostgreSQL
-	if a.DB != nil {
-		if err := a.DB.CreateOrder(ctx, orderRecord); err != nil {
-			log.Printf("DB error: %v", err)
-		}
-	}
-
-	// 2. Lưu Cache vào ElastiCache Redis
+	// Step 1: Check Redis cache first (Fast path - Cache Hit)
 	if a.Cache != nil {
-		payloadBytes, _ := json.Marshal(orderRecord)
-		if err := a.Cache.SetOrderCache(ctx, orderID, payloadBytes, 10*time.Minute); err != nil {
-			log.Printf("Redis cache error: %v", err)
+		cachedStr, err := a.Cache.GetOrderCache(ctx, orderID)
+		if err == nil && cachedStr != "" {
+			var cachedRecord db.OrderRecord
+			if err := json.Unmarshal([]byte(cachedStr), &cachedRecord); err == nil {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(ResponsePayload{
+					Service:   "core-service",
+					Status:    "ORDER_RETRIEVED",
+					Timestamp: time.Now().UTC().Format(time.RFC3339),
+					Data: map[string]interface{}{
+						"order":        cachedRecord,
+						"cache_source": "REDIS_CACHE_HIT",
+						"cluster":      "fabric-core-eks",
+					},
+				})
+				return
+			}
 		}
 	}
 
-	// 3. Đẩy OrderCreated event vào Amazon SQS
-	if a.SQS != nil {
-		msgBytes, _ := json.Marshal(orderRecord)
-		if err := a.SQS.PublishOrderEvent(ctx, orderID, string(msgBytes)); err != nil {
-			log.Printf("SQS error: %v", err)
+	// Step 2: Fallback to Aurora PostgreSQL (DB Hit)
+	if a.DB != nil {
+		order, err := a.DB.GetOrder(ctx, orderID)
+		if err == nil && order != nil {
+			// Populate cache for subsequent requests
+			if a.Cache != nil {
+				payloadBytes, _ := json.Marshal(order)
+				_ = a.Cache.SetOrderCache(ctx, orderID, payloadBytes, 10*time.Minute)
+			}
+
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(ResponsePayload{
+				Service:   "core-service",
+				Status:    "ORDER_RETRIEVED",
+				Timestamp: time.Now().UTC().Format(time.RFC3339),
+				Data: map[string]interface{}{
+					"order":        order,
+					"cache_source": "AURORA_DB_HIT (Cache populated)",
+					"cluster":      "fabric-core-eks",
+				},
+			})
+			return
 		}
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(ResponsePayload{
+		Service: "core-service",
+		Status:  "NOT_FOUND",
+		Error:   fmt.Sprintf("Order [%s] not found in Cache or Database", orderID),
+	})
+}
+
+func (a *App) systemStatusHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	dbPing := "OK"
+	if a.DB != nil {
+		if err := a.DB.Pool.Ping(ctx); err != nil {
+			dbPing = fmt.Sprintf("FAILED: %v", err)
+		}
+	} else {
+		dbPing = "NOT_CONNECTED"
+	}
+
+	redisPing := "OK"
+	if a.Cache != nil {
+		if err := a.Cache.Client.Ping(ctx).Err(); err != nil {
+			redisPing = fmt.Sprintf("FAILED: %v", err)
+		}
+	} else {
+		redisPing = "NOT_CONNECTED"
+	}
+
+	hostname, _ := os.Hostname()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(ResponsePayload{
 		Service:   "core-service",
-		Status:    "ORDER_CREATED",
+		Status:    "UP",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Data:      orderRecord,
+		Data: map[string]interface{}{
+			"cluster":           "fabric-core-eks",
+			"pod_hostname":      hostname,
+			"aurora_postgresql": map[string]string{
+				"host":   a.Config.DBHost,
+				"status": dbPing,
+			},
+			"elasticache_redis": map[string]interface{}{
+				"host":     a.Config.RedisHost,
+				"status":   redisPing,
+				"tls":      a.Config.RedisTLS,
+			},
+			"amazon_sqs": map[string]string{
+				"queue_url": a.Config.SQSQueueURL,
+				"status":    "ACTIVE",
+				"worker":    "payment-worker-1",
+			},
+		},
 	})
 }
 
@@ -259,7 +437,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", app.healthHandler)
 	mux.HandleFunc("/readyz", app.healthHandler)
-	mux.HandleFunc("/orders", app.createOrderHandler)
+	mux.HandleFunc("/orders", app.ordersHandler)
+	mux.HandleFunc("/orders/", app.getOrderByIDHandler)
+	mux.HandleFunc("/system-status", app.systemStatusHandler)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	server := &http.Server{

@@ -78,3 +78,38 @@ func (d *DBClient) CreateOrder(ctx context.Context, order OrderRecord) error {
 	return err
 }
 
+func (d *DBClient) GetOrder(ctx context.Context, id string) (*OrderRecord, error) {
+	query := `SELECT id, product_id, quantity, amount, status, created_at FROM orders WHERE id = $1;`
+	var order OrderRecord
+	err := d.Pool.QueryRow(ctx, query, id).Scan(
+		&order.ID, &order.ProductID, &order.Quantity, &order.Amount, &order.Status, &order.CreatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &order, nil
+}
+
+func (d *DBClient) ListOrders(ctx context.Context, limit int) ([]OrderRecord, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	query := `SELECT id, product_id, quantity, amount, status, created_at FROM orders ORDER BY created_at DESC LIMIT $1;`
+	rows, err := d.Pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []OrderRecord
+	for rows.Next() {
+		var o OrderRecord
+		if err := rows.Scan(&o.ID, &o.ProductID, &o.Quantity, &o.Amount, &o.Status, &o.CreatedAt); err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+	return orders, nil
+}
+
+
