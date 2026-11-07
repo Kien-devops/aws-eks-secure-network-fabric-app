@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: edge-frontend-config
+  namespace: fabric-apps
+  labels:
+    app: frontend
+    Project: aws-eks-secure-network-fabric
+data:
+  PORT: "8080"
+  ENVIRONMENT: "production"
+  CORE_BACKEND_URL: "https://core.fabric.internal:443"
+  HTTP_TIMEOUT: "10s"
+  LOG_LEVEL: "info"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: edge-frontend-secret
+  namespace: fabric-apps
+  labels:
+    app: frontend
+type: Opaque
+stringData:
+  # Mount vao /etc/fabric-ca/ca.crt neu can verify custom internal CA
+  ca.crt: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-frontend
+  namespace: fabric-apps
+  labels:
+    app: frontend
+    Project: aws-eks-secure-network-fabric
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-edge-frontend:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        envFrom:
+        - configMapRef:
+            name: edge-frontend-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: fabric-apps
+  labels:
+    app: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP

@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: order-service
+  namespace: fabric-apps
+  labels:
+    app: order-service
+    aws-credentials: pod-identity
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: core-service-config
+  namespace: fabric-apps
+  labels:
+    app: order-service
+    Project: aws-eks-secure-network-fabric
+data:
+  PORT: "8082"
+  DB_HOST: "db.fabric.internal"
+  DB_PORT: "5432"
+  DB_NAME: "fabric_db"
+  DB_USER: "postgresadmin"
+  DB_SSL_MODE: "prefer"
+  REDIS_HOST: "redis.fabric.internal"
+  REDIS_PORT: "6379"
+  REDIS_TLS: "true"
+  SQS_QUEUE_URL: "https://ap-southeast-1.queue.amazonaws.com/620306387033/fabric-order-events"
+  AWS_REGION: "ap-southeast-1"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: core-service-secret
+  namespace: fabric-apps
+  labels:
+    app: order-service
+type: Opaque
+stringData:
+  # Gia tri duoc dong bo tu AWS Secrets Manager (fabric-core-redis-auth)
+  DB_PASSWORD: ""
+  REDIS_AUTH: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: core-service
+  namespace: fabric-apps
+  labels:
+    app: order-service
+    Project: aws-eks-secure-network-fabric
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        aws-credentials: pod-identity
+    spec:
+      serviceAccountName: order-service
+      containers:
+      - name: core-service
+        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-core-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8082
+          name: https-order
+        envFrom:
+        - configMapRef:
+            name: core-service-config
+        - secretRef:
+            name: core-service-secret
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8082
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8082
+          initialDelaySeconds: 10
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: core-internal-nlb
+  namespace: fabric-apps
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-name: "fabric-core-internal-nlb"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internal"
+    service.beta.kubernetes.io/aws-load-balancer-subnets: "fabric-core-nodes-1a, fabric-core-nodes-1b"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: "preserve_client_ip.enabled=false"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "TCP"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "traffic-port"
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: "Project=aws-eks-secure-network-fabric,Environment=prod"
+spec:
+  type: LoadBalancer
+  selector:
+    app: order-service
+  ports:
+  - name: https-order
+    port: 443
+    targetPort: 8082
+    protocol: TCP
