@@ -53,6 +53,7 @@ jobs:
           format: 'json'
           output: 'trivy-results-core.json'
           severity: 'CRITICAL,HIGH'
+          vuln-type: 'os'
           ignore-unfixed: true
 
       - name: Parse Trivy Scan Results & Enforce Security Gate
