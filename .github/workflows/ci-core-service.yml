@@ -26,10 +26,12 @@ jobs:
           go-version: '1.22'
           check-latest: true
 
-      - name: Run Unit Tests
+      - name: Run Unit Tests & Build Verification
         working-directory: services/core-service
         run: |
+          go mod tidy
           go test -v ./handlers/...
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v .
 
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
