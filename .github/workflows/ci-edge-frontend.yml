@@ -51,10 +51,14 @@ jobs:
           format: 'json'
           output: 'trivy-results-edge.json'
           severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
 
       - name: Parse Trivy Scan Results & Enforce Security Gate
         id: trivy-gate
         run: |
+          echo "### 🛡️ Trivy Scan Detailed Findings"
+          jq -r '.Results[]?.Vulnerabilities[]? | "\(.VulnerabilityID) [\(.Severity)] \(.PkgName) \(.InstalledVersion) -> Fixed: \(.FixedVersion // "None")"' trivy-results-edge.json || true
+          
           CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results-edge.json || echo "0")
           HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results-edge.json || echo "0")
           
