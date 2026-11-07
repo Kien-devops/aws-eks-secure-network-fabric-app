@@ -1,4 +1,4 @@
-name: CI Core Service (Build, Test, Push ECR)
+name: CI Core Service (Build, Scan, Push ECR & GitOps PR)
 
 on:
   push:
@@ -6,19 +6,32 @@ on:
     paths:
       - 'services/core-service/**'
       - '.github/workflows/ci-core-service.yml'
+    paths-ignore:
+      - 'k8s/**'
+      - 'docs/**'
+      - 'evidence/**'
+      - '**.md'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
-  build-and-push:
-    name: Build, Test & Push ECR
+  build-scan-and-promote:
+    name: Build, Scan & GitOps Promote
     runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip ci]') && !contains(github.event.head_commit.message, '[ci skip]')
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -33,6 +46,45 @@ jobs:
           go test -v ./handlers/...
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v .
 
+      - name: Build Local Docker Image for Scanning
+        working-directory: services/core-service
+        run: |
+          docker build -t fabric-core-service:local .
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'fabric-core-service:local'
+          format: 'json'
+          output: 'trivy-results-core.json'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Parse Trivy Scan Results & Enforce Security Gate
+        id: trivy-gate
+        run: |
+          CRITICAL_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results-core.json || echo "0")
+          HIGH_COUNT=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results-core.json || echo "0")
+          
+          echo "critical_count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+          echo "high_count=$HIGH_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "### 🛡️ Trivy Container Security Gate Summary (core-service)" >> $GITHUB_STEP_SUMMARY
+          echo "| Severity Level | Findings Count | Security Gate Status |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **CRITICAL** | $CRITICAL_COUNT | $( [ "$CRITICAL_COUNT" -eq 0 ] && echo "🟢 PASSED" || echo "🔴 FAILED" ) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **HIGH** | $HIGH_COUNT | $( [ "$HIGH_COUNT" -eq 0 ] && echo "🟢 PASSED" || echo "🔴 FAILED" ) |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "::error::Trivy scan detected unacceptable vulnerabilities (CRITICAL: $CRITICAL_COUNT, HIGH: $HIGH_COUNT). Security gate FAILED."
+            exit 1
+          fi
+
+      - name: Upload Trivy Scan Evidence Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-core-service
+          path: trivy-results-core.json
+
       - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -43,13 +95,100 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Docker Image (KMS Encrypted ECR)
+      - name: Tag & Push Docker Image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: fabric-core-service
           IMAGE_TAG: ${{ github.sha }}
-        working-directory: services/core-service
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker tag fabric-core-service:local $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag fabric-core-service:local $ECR_REGISTRY/$ECR_REPOSITORY:latest
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Capture Immutable ECR Image Digest
+        id: capture-digest
+        run: |
+          IMAGE_DIGEST=$(aws ecr describe-images --region ap-southeast-1 \
+            --repository-name fabric-core-service \
+            --image-ids imageTag=${{ github.sha }} \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)
+          SHORT_DIGEST=${IMAGE_DIGEST:7:12}
+          echo "digest=$IMAGE_DIGEST" >> $GITHUB_OUTPUT
+          echo "short_digest=$SHORT_DIGEST" >> $GITHUB_OUTPUT
+          echo "Captured Immutable ECR Digest: $IMAGE_DIGEST"
+
+      - name: GitOps Immutable Digest Update & Bot PR (Loop Guarded)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.capture-digest.outputs.digest }}
+          SHORT_DIGEST: ${{ steps.capture-digest.outputs.short_digest }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPO: fabric-core-service
+        run: |
+          MANIFEST_PATH="k8s/core/deployment.yaml"
+          TARGET_CLUSTER="fabric-core-eks"
+          TARGET_VPC="Core VPC (10.50.0.0/16)"
+          BRANCH_NAME="gitops/promote-core-service"
+          
+          # 1. Update manifest with immutable digest (@sha256:...)
+          sed -i "s|image: .*fabric-core-service.*|image: ${ECR_REGISTRY}/${ECR_REPO}@${IMAGE_DIGEST}|g" $MANIFEST_PATH
+          
+          # 2. Check diff
+          if git diff --quiet $MANIFEST_PATH; then
+            echo "Manifest $MANIFEST_PATH is already at digest ${IMAGE_DIGEST}."
+            exit 0
+          fi
+          
+          # 3. Configure Bot Identity
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          
+          # 4. Create promotion branch & commit with [skip ci] (Loop Prevention)
+          git checkout -B $BRANCH_NAME
+          git add $MANIFEST_PATH
+          git commit -m "chore(gitops): promote core-service to immutable digest ${SHORT_DIGEST} [skip ci]"
+          git push origin $BRANCH_NAME --force
+          
+          # 5. Formulate Rich PR & Status Description
+          PR_BODY="### 🛡️ GitOps Immutable Digest Promotion Report
+          
+          | Metadata Attribute | Production Value |
+          | :--- | :--- |
+          | **Service** | \`core-service\` (Backend Order Service) |
+          | **Target Cluster** | \`${TARGET_CLUSTER}\` in \`${TARGET_VPC}\` |
+          | **Target Manifest** | \`${MANIFEST_PATH}\` |
+          | **Source Commit** | [\`${{ github.sha }}\`](https://github.com/${{ github.repository }}/commit/${{ github.sha }}) |
+          | **ECR Image** | \`${ECR_REGISTRY}/${ECR_REPO}\` |
+          | **Immutable Digest** | \`${IMAGE_DIGEST}\` |
+          | **Trivy Vulnerability Scan** | 🟢 **PASSED** (0 Critical, 0 High) |
+          | **Security Gate** | Verified CVSS Threshold |
+          | **CI Bot Actor** | \`github-actions[bot]\` |
+          | **Loop Prevention** | 🔒 Active (\`[skip ci]\`, \`paths-ignore: ['k8s/**']\`) |
+          | **Timestamp** | $(date -u +'%Y-%m-%dT%H:%M:%SZ') |
+          
+          ---
+          *Automated by AWS EKS Secure Network Fabric DevSecOps Pipeline.*"
+          
+          # 6. Attempt to create or update PR via gh CLI
+          if gh pr create --title "chore(gitops): promote core-service to immutable digest ${SHORT_DIGEST}" \
+                          --body "$PR_BODY" \
+                          --base main \
+                          --head $BRANCH_NAME; then
+            echo "GitOps PR successfully created."
+          else
+            echo "PR creation note: updating existing PR or branch pushed."
+            gh pr edit $BRANCH_NAME --title "chore(gitops): promote core-service to immutable digest ${SHORT_DIGEST}" --body "$PR_BODY" || true
+          fi
+          
+          # 7. Merge promotion to main branch with [skip ci] for immediate GitOps sync
+          git checkout main
+          git merge $BRANCH_NAME -m "chore(gitops): sync immutable digest for core-service [skip ci]"
+          git push origin main
+          
+          echo "### 🚀 GitOps Promotion Completed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service:** \`core-service\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Manifest:** \`${MANIFEST_PATH}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest:** \`${IMAGE_DIGEST}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** \`${BRANCH_NAME}\` -> \`main\` (Guarded with \`[skip ci]\`)" >> $GITHUB_STEP_SUMMARY
