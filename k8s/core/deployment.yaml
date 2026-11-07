@@ -53,7 +53,7 @@ spec:
       serviceAccountName: order-service
       containers:
       - name: core-service
-        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-core-service@sha256:fa38d8073ebbe9f17f21f2b0089dd5dc7e8ee88c541860d255031ed5301c7e60
+        image: 620306387033.dkr.ecr.ap-southeast-1.amazonaws.com/fabric-core-service@sha256:3ecc940bf25e548ccc0bf62d248e6b461e2ec6a552ea7e517fa4da0b7a0d0605
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8082
